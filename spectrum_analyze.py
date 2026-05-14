@@ -26,11 +26,9 @@ def analyze_frequency(freq, freq_samples_orig, freq_samples_interp, original, in
     M_float = find_amplitude(freq_float, ampl_float, mirror_freq)
     M_fixed = find_amplitude(freq_fixed, ampl_fixed, mirror_freq)
     
-    # затухание основного тона (дБ)
     atten_float = 20 * np.log10(A_float / A_orig + 1e-12)
     atten_fixed = 20 * np.log10(A_fixed / A_orig + 1e-12)
 
-    # подавление зеркала (дБ)
     mirror_float = 20 * np.log10(M_float / A_orig + 1e-12)
     mirror_fixed = 20 * np.log10(M_fixed / A_orig + 1e-12)
     
@@ -77,6 +75,7 @@ def plot_spectrum(f, fs_orig, fs_interp, original, interp_float, interp_fixed):
     plt.savefig(f'spectrum_f{f}Hz.png', dpi=150)
     plt.show()
     
+    
 def main():
     freq_sample = 100
     freq_sample_inter = 200
@@ -84,23 +83,27 @@ def main():
     frequencies = [5, 10, 20, 40, 49]
     
     all_results = []
-    try:
-        for f in frequencies:
-            filename = f'signal_f{f}Hz.csv'
-            df = pd.read_csv(filename)
-            
-            orig = df["original"]
-            interp_float = df['interp_float']
-            interp_fixed = df['interp_fixed']
-            
-            interp_fixed = interp_fixed / 32767.0
-            
-            result = analyze_frequency(f, freq_sample, freq_sample_inter, orig, interp_float, interp_fixed)
+
+    for f in frequencies:
+        try:
+            orig_file   = f'orig_f{f}Hz.csv'
+            signal_file = f'signal_f{f}Hz.csv'
+
+            orig         = pd.read_csv(orig_file)['original'].values
+            df           = pd.read_csv(signal_file)
+            interp_float = df['interp_float'].values
+            interp_fixed = df['interp_fixed'].values / 32767.0
+
+            result = analyze_frequency(
+                f, freq_sample, freq_sample_inter,
+                orig, interp_float, interp_fixed
+            )
             all_results.append(result)
-            
+
             plot_spectrum(f, freq_sample, freq_sample_inter, orig, interp_float, interp_fixed)
-    except FileNotFoundError:
-            print(f'Файл {filename} не найден, пропускаем f={f}')
-            
+
+        except FileNotFoundError:
+            print(f'Файл не найден для f={f}, пропускаем')
+
 if __name__ == '__main__':
     main()
