@@ -9,13 +9,22 @@
 #include <algorithm>
 
 constexpr int16_t NUM_LEVELS = 32767;
+constexpr float SAMPLE_RATE = 100.0f;
 
 using std::cout;
 using std::endl;
 
+struct SignalData {
+    std::vector<float> original;
+    std::vector<int16_t> quantized;
+    std::vector<float> interp_float;
+    std::vector<int16_t> interp_fixed;
+    float quant_error;
+    float freq;
+};
 
-std::vector<float> create_sin(float ampl, float freq, float phi, size_t num_samples){
-    size_t sample_rate = 100;
+
+std::vector<float> create_sin(float ampl, float freq, float phi, size_t num_samples, float sample_rate = SAMPLE_RATE){
     std::vector<float> out(num_samples);
     float factor = static_cast<float>(2.0f * M_PI * freq / sample_rate);
     for(size_t n = 0; n < num_samples; ++n){
@@ -33,6 +42,7 @@ std::tuple<std::vector<int16_t>, float> quantize_16(const std::vector<float>& si
         out[i] = static_cast<int16_t>(std::clamp(value, (int32_t)-32768, (int32_t)32767));
         error += std::abs(static_cast<float>(signal[i] - out[i] * ampl / NUM_LEVELS));
     }
+    error = std::sqrt(error / signal.size());
     return {out, error};
 }
 
@@ -84,24 +94,40 @@ std::vector<int16_t> interpolate_qt_linear(const std::vector<int16_t>& signal_qt
     return out;
 }
 
-void write_csv(float freq, float freq_sample, const std::vector<float>& signal, const std::vector<float>& interpolate_signal, const std::vector<int16_t>& fixed_interpolate_signal){
-    std::string filename = "signal_f" + std::to_string((int)freq) + "Hz.csv";
-    std::ofstream file(filename);
-    file << "original,interp_float,interp_fixed\n";
-    for(size_t i = 0; i < interpolate_signal.size(); ++i){
-        float orig = (i % 2 == 0) ? signal[i / 2]: 0.0f;
-        file << orig << "," << interpolate_signal[i] << "," << fixed_interpolate_signal[i] << "\n";
-    }
+void write_csv(const SignalData& data) {    
+    std::ofstream orig_file("orig_f" + std::to_string((int)data.freq) + "Hz.csv");
+    orig_file << "original\n";
+    for (auto v : data.original) orig_file << v << "\n";
+
+    std::ofstream interp_file("signal_f" + std::to_string((int)data.freq) + "Hz.csv");
+    interp_file << "interp_float,interp_fixed\n";
+    for (size_t i = 0; i < data.interp_float.size(); ++i)
+        interp_file << data.interp_float[i] << "," << data.interp_fixed[i] << "\n";
+}
+
+SignalData process_frequency(float freq, float ampl, size_t num_samples) {
+    SignalData data;
+    data.freq = freq;
+    data.original = create_sin(ampl, freq, 0.0f, num_samples);
+    auto [q, err] = quantize_16(data.original, ampl);
+    data.quantized = q;
+    data.quant_error = err;
+    data.interp_float = catmull_rom_spline(data.original);
+    data.interp_fixed = interpolate_qt_linear(data.quantized);
+    return data;
 }
 
 
 int main(){
-    size_t num_levels = std::pow(2, sizeof(int16_t) * 8) / 2 - 1;
-    cout << num_levels << " " << 2.5 * 4 << endl;
-    auto vec = create_sin(8.0f, 45, 0.0f, 30);
-    auto [out, error] = quantize_16(vec, 8.0f);
-    cout << "Error: " << error << endl;
-    auto res = linear_interpolation(vec);
-    cout << res.size() << endl;
+    constexpr float  AMPL = 1.0f;
+    constexpr size_t NUM_SAMPLES = 700;
+
+    std::vector<float> frequencies = {5.0f, 10.0f, 20.0f, 40.0f, 49.0f};
+
+    for (float f : frequencies) {
+        SignalData data = process_frequency(f, AMPL, NUM_SAMPLES);
+        cout << "f = " << f << " Гц | quant error = " << data.quant_error << endl;
+        write_csv(data);
+    }
     return 0;
 }
